@@ -1,0 +1,178 @@
+import cv2
+import webbrowser
+import tkinter as tk
+from tkinter import messagebox
+from PIL import Image, ImageTk
+from deepface import DeepFace
+from googleapiclient.discovery import build
+import speech_recognition as sr
+import threading
+
+def detect_emotion(image_path="captured_face.jpg"):
+    result = DeepFace.analyze(img_path=image_path, actions=['emotion'], enforce_detection=False)
+    if isinstance(result, list):
+        emotion = result[0]['dominant_emotion']
+    else:
+        emotion = result['dominant_emotion']
+    return emotion
+
+def map_emotion_to_keywords(emotion):
+    emotion_to_keywords = {
+        "happy": "upbeat songs",
+        "sad": "sad acoustic songs",
+        "angry": "angry rock metal music",
+        "surprise": "surprising energetic music",
+        "neutral": "chill ambient music",
+        "fear": "calming instrumental music",
+        "disgust": "grunge alternative music"
+    }
+    return emotion_to_keywords.get(emotion.lower(), "mood music")
+
+def search_youtube_music(query, api_key):
+    youtube = build("youtube", "v3", developerKey=api_key)
+    request = youtube.search().list(
+        part="snippet", q=query, type="video", videoCategoryId="10", maxResults=1
+    )
+    response = request.execute()
+    if response["items"]:
+        video_id = response["items"][0]["id"]["videoId"]
+        video_url = f"https://www.youtube.com/watch?v={video_id}"
+        webbrowser.open(video_url)
+        return video_url
+    return None
+
+def run_face_mode():
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        messagebox.showerror("Error", "Could not open webcam.")
+        return
+
+    for i in range(30):
+        ret, frame = cap.read()
+        if ret:
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(frame_rgb)
+            imgtk = ImageTk.PhotoImage(image=img)
+            label_video.imgtk = imgtk
+            label_video.configure(image=imgtk)
+            root.update()
+
+    ret, frame = cap.read()
+    if ret:
+        cv2.imwrite("captured_face.jpg", frame)
+        emotion = detect_emotion("captured_face.jpg")
+        query = map_emotion_to_keywords(emotion)
+        label_result.config(text=f"🎭 Detected Emotion: {emotion}", fg="#2E86C1")
+        video_url = search_youtube_music(query, YOUTUBE_API_KEY)
+        if not video_url:
+            messagebox.showerror("Error", "No music found.")
+    else:
+        messagebox.showerror("Error", "Failed to capture frame.")
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+def capture_verbal_prompt():
+    recognizer = sr.Recognizer()
+    recognizer.energy_threshold = 300
+    recognizer.dynamic_energy_threshold = True
+
+    try:
+        mic = sr.Microphone()
+    except Exception as e:
+        print("Microphone initialization error:", e)
+        return None
+
+    with mic as source:
+        label_result.config(text="🎙 Listening...")
+        recognizer.adjust_for_ambient_noise(source, duration=1)
+        try:
+            audio = recognizer.listen(source, phrase_time_limit=8)
+        except Exception as e:
+            print("Listening error:", e)
+            return None
+
+    try:
+        text = recognizer.recognize_google(audio, language="en-IN")
+        print("Recognized speech:", text)
+        return text.lower()
+    except sr.UnknownValueError:
+        print("Could not understand audio")
+        return None
+    except sr.RequestError as e:
+        print("Speech recognition service error:", e)
+        return None
+
+def run_voice_mode():
+    def worker():
+        spoken = capture_verbal_prompt()
+        if spoken:
+            query = map_emotion_to_keywords(spoken)
+            label_result.config(text=f"🗣 You said: {spoken}", fg="#27AE60")
+            video_url = search_youtube_music(query, YOUTUBE_API_KEY)
+            if not video_url:
+                messagebox.showerror("Error", "No music found.")
+        else:
+            messagebox.showerror("Error", "Could not understand voice input.")
+
+    threading.Thread(target=worker).start()
+
+YOUTUBE_API_KEY = "AIzaSyCjOxopnMpVIp-XQuY1H0paaCwRVQzkvic"
+
+root = tk.Tk()
+root.attributes('-fullscreen', True)
+root.title("🎵 Emotion-Based Music Player")
+root.geometry("800x600")
+
+bg_image = Image.open("background2.jpg")
+bg_label = tk.Label(root)
+bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+
+def resize_bg(event):
+    new_width = event.width
+    new_height = event.height
+    resized = bg_image.resize((new_width,new_height), Image.Resampling.LANCZOS)
+    photo = ImageTk.PhotoImage(resized)
+    bg_label.config(image = photo)
+    bg_label.image = photo
+
+root.bind("<Configure>",resize_bg)
+
+label_title = tk.Label(root, text="Emotion-Based Music Player", font=("Chalkduster", 24, "bold"), bg="#000000", fg="white")
+label_title.pack(pady=20)
+
+btn_face = tk.Button(
+    root,
+    text="🎭 Capture Emotion",
+    command=run_face_mode,
+    width=25,              # wider
+    height=3,              # taller
+    highlightbackground ="#000080",
+    fg="black",
+    font=("Arial", 14, "bold"),  # bigger font
+    relief="raised",
+    bd=4                    # thicker border
+)
+btn_face.pack(pady=15)
+
+btn_voice = tk.Button(
+    root,
+    text="🗣 Voice Prompt",
+    command=run_voice_mode,
+    width=25,
+    height=3,
+    highlightbackground ="#FF00FF",
+    fg="black",
+    font=("Arial", 14, "bold"),
+    relief="raised",
+    bd=4
+)
+btn_voice.pack(pady=15)
+
+label_result = tk.Label(root, text="Result will appear here", font=("Arial", 14), fg="white")
+label_result.pack(pady=20)
+
+label_video = tk.Label(root, bg="#222222")
+label_video.pack(pady=10)
+
+root.mainloop()
