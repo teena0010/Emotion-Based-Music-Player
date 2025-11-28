@@ -117,7 +117,7 @@ def run_voice_mode():
 
     threading.Thread(target=worker).start()
 
-YOUTUBE_API_KEY = "AIzaSyCjOxopnMpVIp-XQuY1H0paaCwRVQzkvic"
+YOUTUBE_API_KEY = "Your API Key"
 
 root = tk.Tk()
 root.attributes('-fullscreen', True)
